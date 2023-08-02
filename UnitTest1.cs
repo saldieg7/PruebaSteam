@@ -3,75 +3,30 @@ using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Support.UI;
 using System;
-using System.Collections.Generic;
 using WebDriverManager;
 using WebDriverManager.DriverConfigs.Impl;
-
-public class MainPage
-{
-    private IWebDriver driver;
-
-    public MainPage(IWebDriver driver)
-    {
-        this.driver = driver;
-    }
-
-    public void ClickLoginButton()
-    {
-        IWebElement loginButton = driver.FindElement(By.ClassName("global_action_link"));
-        loginButton.Click();
-    }
-}
-
-public class LoginPage
-{
-    private IWebDriver driver;
-
-    public LoginPage(IWebDriver driver)
-    {
-        this.driver = driver;
-    }
-
-    public void InputRandomCredentialsAndSignIn(string randomUsername, string randomPassword)
-    {
-        IList<IWebElement> textInputs = driver.FindElements(By.ClassName("newlogindialog_TextInput_2eKVn"));
-        IWebElement usernameInput = textInputs[0];
-        IWebElement passwordInput = textInputs[1];
-
-        usernameInput.SendKeys(randomUsername);
-        passwordInput.SendKeys(randomPassword);
-
-        IWebElement signInButton = driver.FindElement(By.ClassName("newlogindialog_SubmitButton_2QgFE"));
-        signInButton.Click();
-    }
-}
-
-public static class CustomExpectedConditions
-{
-    public static Func<IWebDriver, bool> UrlContains(string partialUrl)
-    {
-        return driver => driver.Url.Contains(partialUrl);
-    }
-}
 
 namespace SteamUITests
 {
     [TestFixture]
-    public class Task2Tests
+    public class InvalidLoginTests
     {
         private IWebDriver driver;
         private MainPage mainPage;
-        private LoginPage loginPage;
+
+        [OneTimeSetUp]
+        public void OneTimeSetup()
+        {
+            new DriverManager().SetUpDriver(new ChromeConfig());
+        }
 
         [SetUp]
         public void Setup()
         {
-            new DriverManager().SetUpDriver(new ChromeConfig());
             driver = new ChromeDriver();
             driver.Manage().Window.Maximize();
 
             mainPage = new MainPage(driver);
-            loginPage = new LoginPage(driver);
         }
 
         [TearDown]
@@ -83,26 +38,97 @@ namespace SteamUITests
         [Test]
         public void InvalidLoginTest()
         {
-            // Go to the URL
+            // Navigate to URL
             driver.Navigate().GoToUrl("https://store.steampowered.com/");
 
-            // Click login button 
-            mainPage.ClickLoginButton();
+            // Login button 
+            LoginPage loginPage = mainPage.ClickLoginButton();
 
-            //  Random user and password 
+            // Random credentials and click the sign-in button
             string randomUsername = "random" + DateTime.Now.Millisecond;
             string randomPassword = "randompwd" + DateTime.Now.Millisecond;
 
-            loginPage.InputRandomCredentialsAndSignIn(randomUsername, randomPassword);
-
-            // Explicit waits for the main page and login page URLs
-            WebDriverWait wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
-            wait.Until(CustomExpectedConditions.UrlContains("https://store.steampowered.com/"));
-            wait.Until(CustomExpectedConditions.UrlContains("https://store.steampowered.com/login/"));
+            LoginPage postLoginPage = loginPage.InputRandomCredentialsAndSignIn(randomUsername, randomPassword);
 
             // Assert expected results
             Assert.IsTrue(driver.Url.Contains("https://store.steampowered.com/"), "Main page is not displayed.");
-            Assert.IsTrue(driver.Url.Contains("https://store.steampowered.com/login/"), "Login page is not displayed.");
+            Assert.IsTrue(postLoginPage.IsLoadingElementDisplayed(), "Loading element is not displayed.");
+            Assert.IsTrue(postLoginPage.IsErrorTextDisplayed(), "Error text is not displayed after loading element disappears.");
+        }
+    }
+
+    public class MainPage
+    {
+        private IWebDriver driver;
+
+        public MainPage(IWebDriver driver)
+        {
+            this.driver = driver;
+        }
+
+        public LoginPage ClickLoginButton()
+        {
+            IWebElement loginButton = driver.FindElement(By.ClassName("global_action_link"));
+            loginButton.Click();
+
+            return new LoginPage(driver);
+        }
+    }
+
+    public class LoginPage
+    {
+        private IWebDriver driver;
+        private WebDriverWait wait;
+
+        // Locators
+        private By usernameInputLocator = By.Id("input_username");
+        private By passwordInputLocator = By.Id("input_password");
+        private By signInButtonLocator = By.XPath("//div[@class='login_btn_v6']//button");
+
+        public LoginPage(IWebDriver driver)
+        {
+            this.driver = driver;
+            this.wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
+        }
+
+        public LoginPage InputRandomCredentialsAndSignIn(string randomUsername, string randomPassword)
+        {
+            IWebElement usernameInput = wait.Until(ExpectedConditions.ElementIsVisible(usernameInputLocator));
+            IWebElement passwordInput = wait.Until(ExpectedConditions.ElementIsVisible(passwordInputLocator));
+
+            usernameInput.SendKeys(randomUsername);
+            passwordInput.SendKeys(randomPassword);
+
+            IWebElement signInButton = wait.Until(ExpectedConditions.ElementToBeClickable(signInButtonLocator));
+            signInButton.Click();
+
+            return this;
+        }
+
+        public bool IsLoadingElementDisplayed()
+        {
+            try
+            {
+                IWebElement loadingElement = driver.FindElement(By.Id("loading"));
+                return loadingElement.Displayed;
+            }
+            catch (NoSuchElementException)
+            {
+                return false;
+            }
+        }
+
+        public bool IsErrorTextDisplayed()
+        {
+            try
+            {
+                IWebElement errorText = wait.Until(ExpectedConditions.ElementIsVisible(By.ClassName("error")));
+                return errorText.Displayed;
+            }
+            catch (NoSuchElementException)
+            {
+                return false;
+            }
         }
     }
 }
